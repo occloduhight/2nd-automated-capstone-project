@@ -1,39 +1,27 @@
-
 locals {
   name         = "autocap2"
   email        = "chinweodochi@gmail.com"
   s3_origin_id = aws_s3_bucket.autocap2_media.id
   db_endpoint = aws_db_instance.wordpress_db.endpoint
-  # s3_origin_id    = "autocap2-s3-origin"
   db_cred = jsondecode(
     aws_secretsmanager_secret_version.db_cred_version.secret_string
   )
-  # wordpress_script = file("${path.module}/userdata.sh")
-  # db_cred         = jsondecode(aws_secretsmanager_secret_version.db_cred_version.secret_string)
 }
 
 #checkov
-
 resource "null_resource" "pre_scan" {
   provisioner "local-exec" {
     command     = "./checkov_scan.sh"
     interpreter = ["bash", "-c"]
   }
-
   provisioner "local-exec" {
     when    = destroy
     command = "rm -f checkov_output.JSON"
   }
-
   triggers = {
     always_run = timestamp()
   }
 }
-
-output "pre_scan_status" {
-  value = "Pre-scan completed. Check Slack and checkov_output.JSON file for details."
-}
-
 # create VPC
 resource "aws_vpc" "vpc" {
   cidr_block       = var.cidr
@@ -43,7 +31,6 @@ resource "aws_vpc" "vpc" {
     Name = "${local.name}-vpc"
   }
 }
-
 # create public subnet 1
 resource "aws_subnet" "pub_sn1" {
   vpc_id            = aws_vpc.vpc.id
@@ -54,7 +41,6 @@ resource "aws_subnet" "pub_sn1" {
     Name = "${local.name}-pub_sn1"
   }
 }
-
 # create public subnet 2
 resource "aws_subnet" "pub_sn2" {
   vpc_id            = aws_vpc.vpc.id
@@ -65,7 +51,6 @@ resource "aws_subnet" "pub_sn2" {
     Name = "${local.name}-pub_sn2"
   }
 }
-
 # create private subnet 1
 resource "aws_subnet" "prv_sn1" {
   vpc_id            = aws_vpc.vpc.id
@@ -76,7 +61,6 @@ resource "aws_subnet" "prv_sn1" {
     Name = "${local.name}-prv_sn1"
   }
 }
-
 # create private subnet 2
 resource "aws_subnet" "prv_sn2" {
   vpc_id            = aws_vpc.vpc.id
@@ -87,7 +71,6 @@ resource "aws_subnet" "prv_sn2" {
     Name = "${local.name}-prv_sub2"
   }
 }
-
 # create internet gateway
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.vpc.id
@@ -96,7 +79,6 @@ resource "aws_internet_gateway" "igw" {
     Name = "${local.name}-igw"
   }
 }
-
 # create elastic ip
 resource "aws_eip" "eip" {
   domain = "vpc"
@@ -115,7 +97,6 @@ resource "aws_nat_gateway" "ngw" {
     Name = "${local.name}-ngw"
   }
 }
-
 #  Create route tabble for public subnets
 resource "aws_route_table" "pub_rt" {
   vpc_id = aws_vpc.vpc.id
@@ -127,7 +108,6 @@ resource "aws_route_table" "pub_rt" {
     Name = "${local.name}-pub_rt"
   }
 }
-
 #  Create route table for private subnets
 resource "aws_route_table" "prv_rt" {
   vpc_id = aws_vpc.vpc.id
@@ -139,35 +119,27 @@ resource "aws_route_table" "prv_rt" {
     Name = "${local.name}-prv_rt"
   }
 }
-
 # Creating route table association for public subnet1
 resource "aws_route_table_association" "ass_pub_sn1" {
   subnet_id      = aws_subnet.pub_sn1.id
   route_table_id = aws_route_table.pub_rt.id
 }
-
 #  Creating route table association for public subnet2
 resource "aws_route_table_association" "ass_pub_sn2" {
   subnet_id      = aws_subnet.pub_sn2.id
   route_table_id = aws_route_table.pub_rt.id
 }
-
 #  Creating route table association for private_subnet_1
 resource "aws_route_table_association" "ass_prv_sn1" {
   subnet_id      = aws_subnet.prv_sn1.id
   route_table_id = aws_route_table.prv_rt.id
 }
-
 #  Creating route table association for private_subnet_2
 resource "aws_route_table_association" "ass_prv_sn2" {
   subnet_id      = aws_subnet.prv_sn2.id
   route_table_id = aws_route_table.prv_rt.id
 }
-
-
-
 #frontend security group
-
 resource "aws_security_group" "autocap2_sg" {
   name        = "autocap2-sg"
   description = "Allow inbound traffic"
@@ -203,7 +175,6 @@ resource "aws_security_group" "autocap2_sg" {
     Name = "${local.name}-autocap2-sg"
   }
 }
-
 #RDS security group
 resource "aws_security_group" "rds_sg" {
   name        = "rds-sg"
@@ -228,13 +199,11 @@ resource "aws_security_group" "rds_sg" {
     Name = "${local.name}-rds-sg"
   }
 }
-
 #creating keypair RSA key of size 4096 bits
 resource "tls_private_key" "key" {
   algorithm = "RSA"
   rsa_bits  = 4096
 }
-
 # creating private key
 resource "local_file" "key" {
   content         = tls_private_key.key.private_key_pem
@@ -242,13 +211,11 @@ resource "local_file" "key" {
   file_permission = "600"
   depends_on      = [null_resource.pre_scan]
 }
-
 # creating public key
 resource "aws_key_pair" "key" {
   key_name   = "autocap-pub-key"
   public_key = tls_private_key.key.public_key_openssh
 }
-
 # create S3 media bucktet
 resource "aws_s3_bucket" "autocap2_media" {
   bucket        = "autocap2-media"
@@ -274,7 +241,6 @@ resource "aws_s3_bucket_ownership_controls" "autocap2_media_ctrl" {
   depends_on = [aws_s3_bucket_public_access_block.autocap2_media_pub]
 
 }
-
 # Media Bucket policy
 resource "aws_s3_bucket_policy" "media_policy" {
   bucket = aws_s3_bucket.autocap2_media.id
@@ -309,7 +275,6 @@ resource "aws_s3_bucket" "code_bucket" {
     Name = "${local.name}-code-bucket"
   }
 }
-
 # IAM Role for EC2 instances
 resource "aws_iam_role" "wordpress_ec2_role" {
   name = "${local.name}-WordPressEC2ServiceRole"
@@ -352,7 +317,6 @@ resource "aws_iam_role_policy_attachment" "iam_s3_attachment" {
   role       = aws_iam_role.wordpress_ec2_role.name
   policy_arn = aws_iam_policy.s3_policy.arn
 }
-
 #creating iam instance profile
 resource "aws_iam_instance_profile" "iam-instance-profile" {
   name = "${local.name}-instance-profile"
@@ -442,15 +406,14 @@ resource "aws_db_instance" "wordpress_db" {
   engine                  = "mysql"
   engine_version          = "5.7"
   instance_class          = "db.t3.micro"
-  username                = local.db_cred.username # DB user
-  password                = local.db_cred.password # DB password
+  username                = local.db_cred.username 
+  password                = local.db_cred.password 
   parameter_group_name    = "default.mysql5.7"
   skip_final_snapshot     = true  #Whether to skip the final snapshot before deletion
   deletion_protection     = false #Prevent accidental deletion
   publicly_accessible     = false
   backup_retention_period = 3             #days to keep automated RDS backups
-  backup_window           = "03:00-04:00" #backups will happen between...
-
+  backup_window           = "03:00-04:00"  
 
   tags = {
     Name = "${local.name}-wordpress_db"
@@ -466,7 +429,6 @@ resource "time_sleep" "ami-sleep" {
   depends_on      = [aws_instance.wordpress_server]
   create_duration = "360s"
 }
-
 #creating aws_cloudfront_distribution
 resource "aws_cloudfront_distribution" "s3_distribution" {
   origin {
@@ -481,12 +443,11 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
     bucket          = "autocap2-log-bucket.s3.amazonaws.com"
     prefix          = "cloudfront-log"
   }
-
   default_cache_behavior {
     allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods   = ["GET", "HEAD"]
     target_origin_id = local.s3_origin_id
-
+    
     forwarded_values {
       query_string = false
 
@@ -524,29 +485,6 @@ data "aws_cloudfront_distribution" "cloudfront" {
 }
 
 # WordPress EC2 Instance
-# Creating Instance
-# resource "aws_instance" "wordpress_server" {
-
-#   ami                         = var.redhat_ami
-#   instance_type               = var.instance_type
-#   subnet_id                   = aws_subnet.pub_sn1.id
-#   associate_public_ip_address = true
-
-#   vpc_security_group_ids = [
-#     aws_security_group.autocap2_sg.id,
-#     aws_security_group.rds_sg.id
-#   ]
-
-#   iam_instance_profile = aws_iam_instance_profile.iam-instance-profile.id
-#   key_name             = aws_key_pair.key.key_name
-#   user_data            = local.wordpress_script
-
-#   tags = {
-#     Name = "${local.name}-ami-builder"
-#   }
-
-#   depends_on = [null_resource.pre_scan]
-# }
 resource "aws_instance" "wordpress_server" {
   ami                         = var.redhat_ami
   instance_type               = var.instance_type
@@ -561,7 +499,6 @@ resource "aws_instance" "wordpress_server" {
     Name = "${local.name}-wordpress_server"
   }
 }
-
 #creating ACM certificate
 resource "aws_acm_certificate" "acm-cert" {
   domain_name       = "greatminds.sbs"
@@ -571,13 +508,11 @@ resource "aws_acm_certificate" "acm-cert" {
     Name = "${local.name}-acm-cert"
   }
 }
-
 #creating route53 hosted zone
 data "aws_route53_zone" "autocap2-zone" {
   name         = var.domain
   private_zone = false
 }
-
 #creating A record
 resource "aws_route53_record" "autocap2-record" {
   zone_id = data.aws_route53_zone.autocap2-zone.zone_id
@@ -589,7 +524,6 @@ resource "aws_route53_record" "autocap2-record" {
     evaluate_target_health = true
   }
 }
-
 #creating cloudwatch dashboard
 resource "aws_cloudwatch_dashboard" "EC2_cloudwatch_dashboard" {
   dashboard_name = "EC2dashboard"
@@ -619,6 +553,7 @@ resource "aws_cloudwatch_dashboard" "EC2_cloudwatch_dashboard" {
     ]
   })
 }
+# CloudWatch Dashboard for ASG CPU Utilization
 resource "aws_cloudwatch_dashboard" "asg_cpu_utilization_dashboard" {
   dashboard_name = "asgcpuutilizationdashboard"
 
@@ -647,6 +582,7 @@ resource "aws_cloudwatch_dashboard" "asg_cpu_utilization_dashboard" {
     ]
   })
 }
+# CloudWatch Metric Alarm for ASG CPU Utilization
 resource "aws_cloudwatch_metric_alarm" "CMA_Autoscaling_Group" {
   alarm_name          = "CMA-ASG-CPU"
   comparison_operator = "GreaterThanOrEqualToThreshold"
@@ -666,40 +602,6 @@ resource "aws_cloudwatch_metric_alarm" "CMA_Autoscaling_Group" {
     AutoScalingGroupName = aws_autoscaling_group.asg.name
   }
 }
-
-# Creating cloudwatch metric alarm ec2 instance
-# resource "aws_cloudwatch_metric_alarm" "CMA_EC2_Instance" {
-#   alarm_name          = "CMA-Instance"
-#   comparison_operator = "GreaterThanOrEqualToThreshold"
-#   evaluation_periods  = 2
-#   metric_name         = "CPUUtilization"
-#   namespace           = "AWS/EC2"
-#   period              = 120
-#   statistic           = "Average"
-#   threshold           = 50
-#   alarm_description   = "This metric monitors ec2 cpu utilization"
-#   alarm_actions       = [aws_sns_topic.server_alert.arn]
-#   dimensions = {
-#     InstanceId : aws_instance.wordpress_server.id
-#   }
-# }
-// Creating cloudwatch metric alarm auto-scalling group
-# resource "aws_cloudwatch_metric_alarm" "CMA_Autoscaling_Group" {
-#   alarm_name          = "CMA-asg"
-#   comparison_operator = "GreaterThanOrEqualToThreshold"
-#   evaluation_periods  = 2
-#   metric_name         = "CPUUtilization"
-#   namespace           = "AWS/EC2"
-#   period              = 120
-#   statistic           = "Average"
-#   threshold           = 50
-#   alarm_description   = "This metric monitors asg cpu utilization"
-#   alarm_actions       = [aws_autoscaling_policy.asg-policy.arn, aws_sns_topic.server_alert.arn]
-#   dimensions = {
-#     AutoScalingGroupName = aws_autoscaling_group.asg.name
-#   }
-# }
-
 #creating sns topic
 resource "aws_sns_topic" "server_alert" {
   name            = "server-alert"

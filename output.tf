@@ -9,3 +9,6 @@ output "rds_endpoint" {
   value       = aws_db_instance.wordpress_db.endpoint
   description = "The endpoint of the WordPress RDS instance"
 }
+output "pre_scan_status" {
+  value = "Pre-scan completed. Check Slack and checkov_output.JSON file for details."
+}
