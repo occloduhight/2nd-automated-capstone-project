@@ -1,10 +1,15 @@
 
 locals {
-  name            = "autocap2"
-  email           = "chinweodochi@gmail.com"
-  s3_origin_id    = "autocap2-s3-origin"
-  wordpress_script = file("${path.module}/userdata.sh")
-  db_cred         = jsondecode(aws_secretsmanager_secret_version.db_cred_version.secret_string)
+  name         = "autocap2"
+  email        = "chinweodochi@gmail.com"
+  s3_origin_id = aws_s3_bucket.autocap2_media.id
+  db_endpoint = aws_db_instance.wordpress_db.endpoint
+  # s3_origin_id    = "autocap2-s3-origin"
+  db_cred = jsondecode(
+    aws_secretsmanager_secret_version.db_cred_version.secret_string
+  )
+  # wordpress_script = file("${path.module}/userdata.sh")
+  # db_cred         = jsondecode(aws_secretsmanager_secret_version.db_cred_version.secret_string)
 }
 
 #checkov
@@ -29,27 +34,6 @@ output "pre_scan_status" {
   value = "Pre-scan completed. Check Slack and checkov_output.JSON file for details."
 }
 
-# resource "null_resource" "pre_scan" {
-#   provisioner "local-exec" {
-#     command = "./checkov_scan.sh"
-
-#     interpreter = ["bash", "-c"]
-#   } 
-  
-#   provisioner "local-exec" {
-#     when = destroy
-#     command = "rm -f checkov_output.JSON"
-#   }
-
-# triggers = {
-#     always_run = "${timestamp()}"
-
-#   }
-# }
-
-# output "pre_scan_status" {
-#   value = "Pre-scan completed. Check Slack and checkov_output.JSON file for details."
-# }
 # create VPC
 resource "aws_vpc" "vpc" {
   cidr_block       = var.cidr
@@ -64,7 +48,7 @@ resource "aws_vpc" "vpc" {
 resource "aws_subnet" "pub_sn1" {
   vpc_id            = aws_vpc.vpc.id
   cidr_block        = var.pub_sn1
-  availability_zone = "eu-west-3a"
+  availability_zone = "eu-west-2a"
 
   tags = {
     Name = "${local.name}-pub_sn1"
@@ -75,7 +59,7 @@ resource "aws_subnet" "pub_sn1" {
 resource "aws_subnet" "pub_sn2" {
   vpc_id            = aws_vpc.vpc.id
   cidr_block        = var.pub_sn2
-  availability_zone = "eu-west-3b"
+  availability_zone = "eu-west-2b"
 
   tags = {
     Name = "${local.name}-pub_sn2"
@@ -86,7 +70,7 @@ resource "aws_subnet" "pub_sn2" {
 resource "aws_subnet" "prv_sn1" {
   vpc_id            = aws_vpc.vpc.id
   cidr_block        = var.prv_sn1
-  availability_zone = "eu-west-3a"
+  availability_zone = "eu-west-2a"
 
   tags = {
     Name = "${local.name}-prv_sn1"
@@ -97,7 +81,7 @@ resource "aws_subnet" "prv_sn1" {
 resource "aws_subnet" "prv_sn2" {
   vpc_id            = aws_vpc.vpc.id
   cidr_block        = var.prv_sn2
-  availability_zone = "eu-west-3b"
+  availability_zone = "eu-west-2b"
 
   tags = {
     Name = "${local.name}-prv_sub2"
@@ -125,7 +109,7 @@ resource "aws_eip" "eip" {
 resource "aws_nat_gateway" "ngw" {
   allocation_id = aws_eip.eip.id
   subnet_id     = aws_subnet.pub_sn1.id
-    depends_on = [aws_eip.eip]
+  depends_on    = [aws_eip.eip]
 
   tags = {
     Name = "${local.name}-ngw"
@@ -230,8 +214,8 @@ resource "aws_security_group" "rds_sg" {
     from_port   = var.mysqlport
     to_port     = var.mysqlport
     protocol    = "tcp"
-    security_groups = [aws_security_group.autocap2_sg.id]
-    # cidr_blocks = ["${var.pub_sn1}", "${var.pub_sn2}"]
+    # security_groups = [aws_security_group.autocap2_sg.id]
+    cidr_blocks = ["${var.pub_sn1}", "${var.pub_sn2}"]
   }
   egress {
     description = "All TRAFFIC"
@@ -256,7 +240,7 @@ resource "local_file" "key" {
   content         = tls_private_key.key.private_key_pem
   filename        = "autocap-key"
   file_permission = "600"
-  depends_on = [ null_resource.pre_scan ]
+  depends_on      = [null_resource.pre_scan]
 }
 
 # creating public key
@@ -269,7 +253,7 @@ resource "aws_key_pair" "key" {
 resource "aws_s3_bucket" "autocap2_media" {
   bucket        = "autocap2-media"
   force_destroy = true
-  depends_on = [ null_resource.pre_scan ]
+  depends_on    = [null_resource.pre_scan]
   tags = {
     Name = "${local.name}-autocap2-media"
   }
@@ -317,8 +301,8 @@ data "aws_iam_policy_document" "autocap2_media_policy" {
 }
 # S3 code Bucket 
 resource "aws_s3_bucket" "code_bucket" {
-  bucket = "autocap2-code-bucket"
-  depends_on = [ null_resource.pre_scan ]
+  bucket        = "autocap2-code-bucket"
+  depends_on    = [null_resource.pre_scan]
   force_destroy = true
 
   tags = {
@@ -427,13 +411,13 @@ resource "aws_s3_bucket_policy" "autocap2_log_bucket_policy" {
 }
 # #insert secret manager here
 resource "aws_secretsmanager_secret" "db_cred" {
-  name        = "db_cred"
+  name        = "db_cred2"
   description = "Database credentials for the WordPress image-sharing application"
 }
 
 resource "aws_secretsmanager_secret_version" "db_cred_version" {
   secret_id     = aws_secretsmanager_secret.db_cred.id
-  secret_string = jsonencode(var.dbcred)
+  secret_string = jsonencode(var.db_cred)
 }
 
 resource "aws_db_subnet_group" "wordpress_db_subnet" {
@@ -446,29 +430,41 @@ resource "aws_db_subnet_group" "wordpress_db_subnet" {
 }
 #Create RDS MySQL Instance
 resource "aws_db_instance" "wordpress_db" {
-  identifier             = var.db_identifier
-  db_subnet_group_name   = aws_db_subnet_group.wordpress_db_subnet.name
-  vpc_security_group_ids = [aws_security_group.rds_sg.id]
-  allocated_storage      = 20
-  max_allocated_storage  = 100 #define storage auto scaling
-  db_name                = var.dbname
-  storage_type           = "gp2"
-  engine                 = "mysql"
-  engine_version         = "5.7"
-  instance_class         = "db.t3.micro"
-  username               = local.db_cred.username          # DB user
-  password               = local.db_cred.password        # DB password
-  parameter_group_name   = "default.mysql5.7"
-    skip_final_snapshot    = true #Whether to skip the final snapshot before deletion
-  deletion_protection = false #Prevent accidental deletion
-  publicly_accessible      = false
-  backup_retention_period  = 3 #days to keep automated RDS backups
-  backup_window            = "03:00-04:00" #backups will happen between...
-  
+  # identifier             = var.db-identifier
+  identifier = var.db_identifier
+
+  db_subnet_group_name    = aws_db_subnet_group.wordpress_db_subnet.name
+  vpc_security_group_ids  = [aws_security_group.rds_sg.id]
+  allocated_storage       = 20
+  max_allocated_storage   = 100 #define storage auto scaling
+  db_name                 = var.dbname
+  storage_type            = "gp2"
+  engine                  = "mysql"
+  engine_version          = "5.7"
+  instance_class          = "db.t3.micro"
+  username                = local.db_cred.username # DB user
+  password                = local.db_cred.password # DB password
+  parameter_group_name    = "default.mysql5.7"
+  skip_final_snapshot     = true  #Whether to skip the final snapshot before deletion
+  deletion_protection     = false #Prevent accidental deletion
+  publicly_accessible     = false
+  backup_retention_period = 3             #days to keep automated RDS backups
+  backup_window           = "03:00-04:00" #backups will happen between...
+
 
   tags = {
     Name = "${local.name}-wordpress_db"
   }
+}
+
+resource "aws_ami_from_instance" "asg_ami" {
+  name               = "${local.name}-ami"
+  source_instance_id = aws_instance.wordpress_server.id
+}
+
+resource "time_sleep" "ami-sleep" {
+  depends_on      = [aws_instance.wordpress_server]
+  create_duration = "360s"
 }
 
 #creating aws_cloudfront_distribution
@@ -513,7 +509,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
     }
   }
 
-  depends_on = [ null_resource.pre_scan ]
+  depends_on = [null_resource.pre_scan]
 
   tags = {
     Name = "${local.name}-cloudfront"
@@ -529,43 +525,42 @@ data "aws_cloudfront_distribution" "cloudfront" {
 
 # WordPress EC2 Instance
 # Creating Instance
+# resource "aws_instance" "wordpress_server" {
+
+#   ami                         = var.redhat_ami
+#   instance_type               = var.instance_type
+#   subnet_id                   = aws_subnet.pub_sn1.id
+#   associate_public_ip_address = true
+
+#   vpc_security_group_ids = [
+#     aws_security_group.autocap2_sg.id,
+#     aws_security_group.rds_sg.id
+#   ]
+
+#   iam_instance_profile = aws_iam_instance_profile.iam-instance-profile.id
+#   key_name             = aws_key_pair.key.key_name
+#   user_data            = local.wordpress_script
+
+#   tags = {
+#     Name = "${local.name}-ami-builder"
+#   }
+
+#   depends_on = [null_resource.pre_scan]
+# }
 resource "aws_instance" "wordpress_server" {
-  count                       = var.build_ami ? 1 : 0
   ami                         = var.redhat_ami
   instance_type               = var.instance_type
-  subnet_id                   = aws_subnet.pub_sn1.id
+  depends_on                  = [null_resource.pre_scan]
   associate_public_ip_address = true
-
-  vpc_security_group_ids = [
-    aws_security_group.autocap2_sg.id,
-    aws_security_group.rds_sg.id
-  ]
-
-  iam_instance_profile = aws_iam_instance_profile.iam-instance-profile.id
-  key_name             = aws_key_pair.key.key_name
-  user_data            = local.wordpress_script
-
+  vpc_security_group_ids      = [aws_security_group.autocap2_sg.id, aws_security_group.rds_sg.id]
+  subnet_id                   = aws_subnet.pub_sn1.id
+  iam_instance_profile        = aws_iam_instance_profile.iam-instance-profile.id
+  key_name                    = aws_key_pair.key.id
+  user_data                   = local.wordpress_script
   tags = {
-    Name = "${local.name}-ami-builder"
+    Name = "${local.name}-wordpress_server"
   }
-
-  depends_on = [null_resource.pre_scan]
 }
-
-# resource "aws_instance" "wordpress_server" {
-#   ami           = var.redhat_ami
-#   instance_type = var.instance_type
-#   depends_on = [ null_resource.pre_scan ]
-#   associate_public_ip_address = true
-#   vpc_security_group_ids      = [aws_security_group.autocap2_sg.id, aws_security_group.rds_sg.id]
-#   subnet_id                   = aws_subnet.pub_sn1.id
-#   iam_instance_profile        = aws_iam_instance_profile.iam-instance-profile.id
-#   key_name                    = aws_key_pair.key.id
-#   user_data                   = local.wordpress_script
-#   tags = {
-#     Name = "${local.name}-wordpress_server"
-#   }
-# }
 
 #creating ACM certificate
 resource "aws_acm_certificate" "acm-cert" {
@@ -578,23 +573,23 @@ resource "aws_acm_certificate" "acm-cert" {
 }
 
 #creating route53 hosted zone
- data "aws_route53_zone" "autocap2-zone" {
-   name         = var.domain
-   private_zone = false
- }
+data "aws_route53_zone" "autocap2-zone" {
+  name         = var.domain
+  private_zone = false
+}
 
 #creating A record
- resource "aws_route53_record" "autocap2-record" {
-   zone_id = data.aws_route53_zone.autocap2-zone.zone_id
-   name    = var.domain
-   type    = "A"
-   alias {
+resource "aws_route53_record" "autocap2-record" {
+  zone_id = data.aws_route53_zone.autocap2-zone.zone_id
+  name    = var.domain
+  type    = "A"
+  alias {
     name                   = aws_lb.lb.dns_name
-     zone_id                = aws_lb.lb.zone_id
+    zone_id                = aws_lb.lb.zone_id
     evaluate_target_health = true
-   }
- }
- 
+  }
+}
+
 #creating cloudwatch dashboard
 resource "aws_cloudwatch_dashboard" "EC2_cloudwatch_dashboard" {
   dashboard_name = "EC2dashboard"
@@ -608,7 +603,7 @@ resource "aws_cloudwatch_dashboard" "EC2_cloudwatch_dashboard" {
             ["AWS/EC2", "CPUUtilization", "InstanceId", "${aws_instance.wordpress_server.id}", { "label" : "Average CPU Utilization" }]
           ]
           period  = 300
-          region  = "eu-west-3"
+          region  = "eu-west-2"
           stacked = false
           stat    = "Average"
           title   = "EC2 Average CPUUtilization"
@@ -639,7 +634,7 @@ resource "aws_cloudwatch_dashboard" "asg_cpu_utilization_dashboard" {
           view    = "timeSeries"
           stat    = "Average"
           stacked = false
-          region  = "eu-west-3"
+          region  = "eu-west-2"
           title   = "Average CPU Utilization"
           yAxis = {
             left = {
@@ -747,24 +742,28 @@ resource "aws_launch_template" "lnch_lt" {
   }
 
   network_interfaces {
-    device_index               = 0
+    device_index                = 0
     associate_public_ip_address = true
     security_groups             = [aws_security_group.autocap2_sg.id]
   }
 
   # user_data = local.wordpress_script
-   user_data = base64encode(local.wordpress_script)
+  user_data = base64encode(local.wordpress_script)
 }
-resource "aws_ami_from_instance" "asg_ami" {
-  name               = "${local.name}-ami"
-  source_instance_id = aws_instance.wordpress_server[0].id
-}
+# resource "aws_ami_from_instance" "asg_ami" {
+#   name               = "${local.name}-ami"
+#   source_instance_id = aws_instance.wordpress_server[0].id
+# }
 
 # resource "aws_ami_from_instance" "asg_ami" {
 #   name               = "${local.name}-ami"
 #   source_instance_id = aws_instance.wordpress_server.id
 # }
 
+# resource "time_sleep" "ami-sleep" {
+#   depends_on      = [aws_instance.wordpress_server]
+#   create_duration = "360s"
+# }
 # creating autoscaling group
 resource "aws_autoscaling_group" "asg" {
   name                      = "${local.name}-asg"
@@ -775,9 +774,9 @@ resource "aws_autoscaling_group" "asg" {
   desired_capacity          = 2
   force_delete              = true
 
-  vpc_zone_identifier       = [aws_subnet.pub_sn1.id, aws_subnet.pub_sn2.id]
-  target_group_arns         = [aws_lb_target_group.tg.arn]
-launch_template {
+  vpc_zone_identifier = [aws_subnet.pub_sn1.id, aws_subnet.pub_sn2.id]
+  target_group_arns   = [aws_lb_target_group.tg.arn]
+  launch_template {
     id      = aws_launch_template.lnch_lt.id
     version = "$Latest"
   }
@@ -806,7 +805,7 @@ resource "aws_autoscaling_policy" "asg-policy" {
 
 # creating target group
 resource "aws_lb_target_group" "tg" {
-  name     = "autocap-tg"
+  name     = "autocap2-tg"
   port     = var.httpport
   protocol = "HTTP"
   vpc_id   = aws_vpc.vpc.id
@@ -816,17 +815,17 @@ resource "aws_lb_target_group" "tg" {
     interval            = 60
     port                = 80
     timeout             = 30
-    path                = "/"
+    path                = "/indextest.html"
     protocol            = "HTTP"
   }
 }
 
 # creating target group listener
-# resource "aws_lb_target_group_attachment" "tg-attach" {
-#   target_group_arn = aws_lb_target_group.tg.arn
-#   target_id        = aws_instance.wordpress_server.id
-#   port             = var.httpport
-# }
+resource "aws_lb_target_group_attachment" "tg-attach" {
+  target_group_arn = aws_lb_target_group.tg.arn
+  target_id        = aws_instance.wordpress_server.id
+  port             = var.httpport
+}
 
 # ALB Setup with Access Logs-
 resource "aws_lb" "lb" {
